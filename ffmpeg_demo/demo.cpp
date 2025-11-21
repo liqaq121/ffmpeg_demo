@@ -1,7 +1,5 @@
 ﻿#include "demo.h"
 
-
-
 using namespace std;
 
 void read_stream_info()
