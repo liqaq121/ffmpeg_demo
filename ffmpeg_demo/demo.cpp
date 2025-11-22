@@ -167,6 +167,8 @@ void create_rgb_frame()
 
 void read_frame()
 {
+    av_log_set_level(AV_LOG_INFO);
+
     const char* fileName = "res/test.mp4";
 
     AVFormatContext* fmt_ctx = nullptr;
@@ -196,10 +198,12 @@ void read_frame()
     AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
     //复制解码器参数到上下文
     avcodec_parameters_to_context(codec_ctx, codecPar);
+    //打开
+    avcodec_open2(codec_ctx, codec, nullptr);
 
     AVFrame* rgb_frame = av_frame_alloc();
     //每帧图像大小
-    int buffer_size = av_image_get_buffer_size(codec_ctx->pix_fmt, codec_ctx->width, codec_ctx->height, 1);
+    int buffer_size = av_image_get_buffer_size(AV_PIX_FMT_RGB24, codec_ctx->width, codec_ctx->height, 1);
     //申请缓冲区
     uint8_t* buffer = (uint8_t*)av_malloc(buffer_size);
     //应用到frame
@@ -207,12 +211,12 @@ void read_frame()
 
     AVPacket* packet = av_packet_alloc();
     AVFrame* frame = av_frame_alloc();
-    SwsContext* sws_ctx = sws_getContext(codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24,
-        codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
+    SwsContext* sws_ctx = sws_getContext(codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
+        codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24,
         SWS_BILINEAR, nullptr, nullptr, nullptr);
 
     int frame_count = 0;
-    while (av_read_frame(fmt_ctx, packet) >= 0 && frame_count < 5)
+    while (av_read_frame(fmt_ctx, packet) >= 0)
     {
         if (packet->stream_index != vs_index)
             continue;
@@ -224,6 +228,7 @@ void read_frame()
             sws_scale(sws_ctx, frame->data, frame->linesize, 0, codec_ctx->height, rgb_frame->data, rgb_frame->linesize);
 
             //TODO: 保存为图片
+            save_as_ppm(rgb_frame, codec_ctx->width, codec_ctx->height, frame_count);
         }
 
         av_packet_unref(packet);
@@ -236,5 +241,22 @@ void read_frame()
     sws_freeContext(sws_ctx);
     avcodec_free_context(&codec_ctx);
     avformat_close_input(&fmt_ctx);
+}
+
+void save_as_ppm(AVFrame* rgb_frame, int width, int height, int frame_index)
+{
+    char filename[256];
+    snprintf(filename, sizeof(filename), "frame_%04d.ppm", frame_index);
+
+    FILE* file = fopen(filename, "wb");
+    if (!file) return;
+
+    fprintf(file, "P6\n%d %d\n255\n", width, height);
+    for (int y = 0; y < height; y++) {
+        fwrite(rgb_frame->data[0] + y * rgb_frame->linesize[0], 1, width * 3, file);
+    }
+    fclose(file);
+
+    std::cout << "保存: " << filename << std::endl;
 }
 
