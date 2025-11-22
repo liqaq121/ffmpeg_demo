@@ -104,6 +104,8 @@ void read_packet()
     avcodec_parameters_to_context(codec_ctx, codecPar);
     avcodec_open2(codec_ctx, codec, nullptr);
 
+    //cout << "像素格式: " << av_get_pix_fmt_name(codec_ctx->pix_fmt) << endl;
+
     AVPacket packet;
     for (int i = 0; i < 5; i++)
     {
@@ -122,6 +124,116 @@ void read_packet()
         av_packet_unref(&packet);
     }
     
+    avcodec_free_context(&codec_ctx);
+    avformat_close_input(&fmt_ctx);
+}
+
+void create_rgb_frame()
+{
+    const char* fileName = "res/test.mp4";
+
+    AVFormatContext* fmt_ctx = nullptr;
+    avformat_open_input(&fmt_ctx, fileName, nullptr, nullptr);
+    //avformat_find_stream_info(fmt_ctx, nullptr);
+
+    int vs_index = -1;
+    for (int i = 0; i < fmt_ctx->nb_streams; i++)
+    {
+        if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+        {
+            vs_index = i;
+            break;
+        }
+    }
+
+
+    AVStream* v_stream = fmt_ctx->streams[vs_index];
+    AVCodecParameters* codecPar = v_stream->codecpar;
+    const AVCodec* codec = avcodec_find_decoder(codecPar->codec_id);
+    AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
+    avcodec_parameters_to_context(codec_ctx, codecPar);
+
+    AVFrame* rgb_frame = av_frame_alloc();
+    int buffer_size = av_image_get_buffer_size(AV_PIX_FMT_RGB24, codec_ctx->width, codec_ctx->height, 1);
+    uint8_t* buffer = (uint8_t*)av_malloc(buffer_size);
+    //给帧分配内存
+    av_image_fill_arrays(rgb_frame->data, rgb_frame->linesize, buffer, AV_PIX_FMT_RGB24, codec_ctx->width, codec_ctx->height, 1);
+
+    av_free(buffer);
+    av_frame_free(&rgb_frame);
+    avcodec_free_context(&codec_ctx);
+    avformat_close_input(&fmt_ctx);
+}
+
+void read_frame()
+{
+    const char* fileName = "res/test.mp4";
+
+    AVFormatContext* fmt_ctx = nullptr;
+
+    //打开
+    avformat_open_input(&fmt_ctx, fileName, nullptr, nullptr);
+    //找流信息
+    avformat_find_stream_info(fmt_ctx, nullptr);
+
+    //找视频流
+    int vs_index = -1;
+    for (int i = 0; i < fmt_ctx->nb_streams; i++)
+    {
+        if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+        {
+            vs_index = i;
+            break;
+        }
+    }
+    
+    AVStream* v_stream = fmt_ctx->streams[vs_index];
+    AVCodecParameters* codecPar = v_stream->codecpar;
+
+    //找解码器
+    const AVCodec* codec = avcodec_find_decoder(codecPar->codec_id);
+    //解码器上下文
+    AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
+    //复制解码器参数到上下文
+    avcodec_parameters_to_context(codec_ctx, codecPar);
+
+    AVFrame* rgb_frame = av_frame_alloc();
+    //每帧图像大小
+    int buffer_size = av_image_get_buffer_size(codec_ctx->pix_fmt, codec_ctx->width, codec_ctx->height, 1);
+    //申请缓冲区
+    uint8_t* buffer = (uint8_t*)av_malloc(buffer_size);
+    //应用到frame
+    av_image_fill_arrays(rgb_frame->data, rgb_frame->linesize, buffer, AV_PIX_FMT_RGB24, codec_ctx->width, codec_ctx->height, 1);
+
+    AVPacket* packet = av_packet_alloc();
+    AVFrame* frame = av_frame_alloc();
+    SwsContext* sws_ctx = sws_getContext(codec_ctx->width, codec_ctx->height, AV_PIX_FMT_RGB24,
+        codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
+        SWS_BILINEAR, nullptr, nullptr, nullptr);
+
+    int frame_count = 0;
+    while (av_read_frame(fmt_ctx, packet) >= 0 && frame_count < 5)
+    {
+        if (packet->stream_index != vs_index)
+            continue;
+
+        avcodec_send_packet(codec_ctx, packet);
+        while (avcodec_receive_frame(codec_ctx, frame) >= 0)
+        {
+            frame_count++;
+            sws_scale(sws_ctx, frame->data, frame->linesize, 0, codec_ctx->height, rgb_frame->data, rgb_frame->linesize);
+
+            //TODO: 保存为图片
+        }
+
+        av_packet_unref(packet);
+    }
+
+    av_packet_free(&packet);
+    av_frame_free(&frame);
+    av_frame_free(&rgb_frame);
+    av_free(buffer);
+    sws_freeContext(sws_ctx);
     avcodec_free_context(&codec_ctx);
     avformat_close_input(&fmt_ctx);
 }

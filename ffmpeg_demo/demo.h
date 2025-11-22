@@ -14,5 +14,6 @@ extern "C" {
 
 void read_stream_info();
 void read_packet();
-
+void create_rgb_frame();
+void read_frame();
 
