@@ -1,0 +1,12 @@
+# vs配置文件夹
+.vs/
+
+# vs预设输出文件夹
+out/
+
+# 二进制文件夹
+/bin
+
+/ffmpeg
+
+CMakePresets.json
