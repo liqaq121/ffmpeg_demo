@@ -49,7 +49,6 @@ void Widget::convert()
     std::string b = ui->leDestFile->text().toStdString();
     const char* inFile = a.c_str();
     const char* outFile = b.c_str();
-    const char* inFile = ui->leSrcFile->text().toStdString().c_str();
     int ret = 0;
 
     AVFormatContext* iFmtCtx = nullptr;

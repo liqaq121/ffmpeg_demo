@@ -18,3 +18,5 @@ void exercise_extract_audio();
 void extract_video();
 //音视频转封装
 void av_convert_wrap();
+//音视频裁剪
+void av_cut();

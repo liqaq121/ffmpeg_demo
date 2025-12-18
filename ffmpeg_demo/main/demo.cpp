@@ -593,3 +593,104 @@ void av_convert_wrap()
     avformat_free_context(oFmtCtx);
     avformat_close_input(&iFmtCtx);
 }
+
+void av_cut()
+{
+    const char* inFile = "res/test.mp4";
+    const char* outFile = "output_cut.mov";
+
+    int64_t start_time = 5;
+    int64_t end_time = 10;
+
+    int ret = -1;
+
+    AVFormatContext* iFmtCtx = nullptr;
+    AVFormatContext* oFmtCtx = nullptr;
+
+    ret = avformat_open_input(&iFmtCtx, inFile, nullptr, nullptr);
+    ret = avformat_find_stream_info(iFmtCtx, nullptr);
+    ret = avformat_alloc_output_context2(&oFmtCtx, nullptr, nullptr, outFile);
+
+    std::map<int, AVStream*> outStreams;
+    for (int i = 0; i < iFmtCtx->nb_streams; i++)
+    {
+        AVStream* inStream = iFmtCtx->streams[i];
+        AVCodecParameters* codePar = inStream->codecpar;
+
+        if (codePar->codec_type != AVMEDIA_TYPE_VIDEO && codePar->codec_type != AVMEDIA_TYPE_AUDIO && codePar->codec_type != AVMEDIA_TYPE_SUBTITLE)
+            continue;
+        
+        AVStream* outStream = avformat_new_stream(oFmtCtx, nullptr);
+        ret = avcodec_parameters_copy(outStream->codecpar, inStream->codecpar);
+        outStream->codecpar->codec_tag = 0;
+        outStreams.emplace(inStream->index, outStream);
+    }
+
+    //跳转到指定位置         流索引（-1：全部）
+    ret = av_seek_frame(iFmtCtx, -1, start_time * AV_TIME_BASE, AVSEEK_FLAG_BACKWARD);
+
+    ret = avio_open(&oFmtCtx->pb, outFile, AVIO_FLAG_WRITE);
+
+    ret = avformat_write_header(oFmtCtx, nullptr);
+
+    //每个流第一个包pts时间戳, dts时间戳
+    std::map<int, uint64_t> pts_stamp;
+    std::map<int, uint64_t> dts_stamp;
+
+    AVPacket* pkt = av_packet_alloc();
+    while (av_read_frame(iFmtCtx, pkt) >= 0)
+    {
+        auto it = outStreams.find(pkt->stream_index);
+        if (it == outStreams.end())
+        {
+            av_packet_unref(pkt);
+            continue;
+        }
+
+        //记录每个流的首包时间戳
+        if (pts_stamp.find(pkt->stream_index) == pts_stamp.end() && pkt->pts > 0)
+        {
+            pts_stamp[it->first] = pkt->pts;
+        }
+        if (dts_stamp.find(pkt->stream_index) == dts_stamp.end() && pkt->dts > 0)
+        {
+            dts_stamp[it->first] = pkt->dts;
+        }
+
+        AVStream* inStream = iFmtCtx->streams[it->first]; //iFmtCtx->streams[pkt->stream_index];
+        AVStream* outStream = it->second;
+
+        //std::cout << "时间: " << av_q2d(inStream->time_base) * pkt->pts << std::endl;
+
+        if (pkt->pts * av_q2d(inStream->time_base) > end_time)
+        {
+            av_packet_unref(pkt);
+            break;
+        }
+
+        pkt->pts = pkt->pts - pts_stamp[it->first];
+        pkt->dts = pkt->dts - dts_stamp[it->first];
+        if (pkt->pts < pkt->dts)
+            pkt->pts = pkt->dts;
+
+        av_packet_rescale_ts(pkt, inStream->time_base, outStream->time_base);
+        pkt->pos = -1;
+
+        ret = av_interleaved_write_frame(oFmtCtx, pkt);
+
+        av_packet_unref(pkt);
+    }
+    av_packet_free(&pkt);
+
+    av_write_trailer(oFmtCtx);
+
+    avio_closep(&oFmtCtx->pb);
+    avformat_free_context(oFmtCtx);
+    avformat_close_input(&iFmtCtx);
+}
+
+
+void aa()
+{
+ 
+}
