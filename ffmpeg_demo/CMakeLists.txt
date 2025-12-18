@@ -2,6 +2,12 @@
 
 project(ffmpeg_demo)
 
+find_package(Qt5 COMPONENTS Core Widgets REQUIRED)
+
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOMOC ON)
+
 file(GLOB_RECURSE SRC 
 ${CMAKE_CURRENT_SOURCE_DIR}/*.h
 ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
@@ -18,6 +24,7 @@ avutil
 swresample
 swscale
 avfilter
+Qt5::Widgets
 )
 
 set(Include_Dirs 

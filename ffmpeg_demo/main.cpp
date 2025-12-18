@@ -1,11 +1,15 @@
-﻿#include <iostream>
+﻿#include <QApplication>
+#include "Widget.h"
 #include "demo.h"
-#include "demo_review.h"
 
 int main(int argc, char* argv[]) 
 {
-    extract_audio_251217();
+#if 0
+    QApplication app(argc, argv);
+    Widget w;
+    w.show();
+    return app.exec();
+#else
 
-
-    return 0;
+#endif
 }
