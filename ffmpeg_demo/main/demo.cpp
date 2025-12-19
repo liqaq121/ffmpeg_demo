@@ -689,8 +689,103 @@ void av_cut()
     avformat_close_input(&iFmtCtx);
 }
 
-
-void aa()
+void encode_fun(AVCodecContext* codecCtx, AVFrame* frm, AVPacket* pkt, std::fstream* fs)
 {
- 
+   int ret = avcodec_send_frame(codecCtx, frm);
+
+   while (ret >= 0)
+   {
+       ret = avcodec_receive_packet(codecCtx, pkt);
+       if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+           break; // 当前帧处理完或结束
+       }
+       else if (ret < 0) {
+           // 真正的错误
+           break;
+       }
+
+       // 写入数据
+       fs->write(reinterpret_cast<const char*>(pkt->data), pkt->size);
+       av_packet_unref(pkt);
+   }
+}
+
+void encode_video()
+{
+    const char* outFile = "output_encode.h264";
+    const char* encoderName = "libx264";
+
+    int ret = -1;
+    const AVCodec* codec = avcodec_find_encoder_by_name(encoderName);
+    std::fstream fs;
+    
+    AVCodecContext* codecCtx = avcodec_alloc_context3(codec);
+    //设置编码器上下文属性
+    codecCtx->width = 1280;
+    codecCtx->height = 960;
+    codecCtx->bit_rate = 500000;
+    
+    codecCtx->gop_size = 10;
+    codecCtx->time_base = { 1, 25 };
+    codecCtx->framerate = { 25, 1 };
+
+    codecCtx->max_b_frames = 1;
+    codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+    if (codecCtx->codec_id == AV_CODEC_ID_H264)
+        av_opt_set(codecCtx->priv_data, "preset", "slow", 0);
+
+    //打开编码器
+    ret = avcodec_open2(codecCtx, codec, nullptr);
+
+    //打开输出文件
+    fs.open(outFile, std::ios::out | std::ios::binary);
+
+    //创建frame
+    AVFrame* frame = av_frame_alloc();
+    //设置frame属性
+    frame->width = codecCtx->width;
+    frame->height = codecCtx->height;
+    frame->format = codecCtx->pix_fmt;
+    
+    //分配空间
+    ret = av_frame_get_buffer(frame, 0);
+
+    //创建packet
+    AVPacket* pkt = av_packet_alloc();
+
+    //生成视频内容
+    //yuv420p
+    //25帧
+// 1. 修正循环变量冲突
+    for (int i = 0; i < 25; i++)
+    {
+        ret = av_frame_make_writable(frame);
+
+        // Y 分量
+        for (int y = 0; y < codecCtx->height; y++) {
+            for (int x = 0; x < codecCtx->width; x++) {
+                frame->data[0][y * frame->linesize[0] + x] = y + x + i * 3;
+            }
+        }
+        // U/V 分量 (注意范围)
+        for (int y = 0; y < codecCtx->height / 2; y++) {
+            for (int x = 0; x < codecCtx->width / 2; x++) {
+                frame->data[1][y * frame->linesize[1] + x] = 128 + y + i * 2;
+                frame->data[2][y * frame->linesize[2] + x] = 64 + x + i * 5;
+            }
+        }
+
+        frame->pts = i;
+        encode_fun(codecCtx, frame, pkt, &fs);
+    }
+
+    //刷新编码器
+    encode_fun(codecCtx, nullptr, pkt, &fs);
+
+
+    av_packet_free(&pkt);
+    av_frame_free(&frame);
+    avcodec_free_context(&codecCtx);
+    fs.close();
 }

@@ -20,3 +20,6 @@ void extract_video();
 void av_convert_wrap();
 //音视频裁剪
 void av_cut();
+//视频编码
+void encode_fun(AVCodecContext* codecCtx, AVFrame* frm, AVPacket* pkt, std::fstream* fs);
+void encode_video();
