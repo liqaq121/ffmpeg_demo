@@ -596,7 +596,7 @@ void av_convert_wrap()
 
 void av_cut()
 {
-    const char* inFile = "res/test.mp4";
+    const char* inFile = "res/b.mp4";
     const char* outFile = "output_cut.mov";
 
     int64_t start_time = 5;
@@ -647,12 +647,18 @@ void av_cut()
             continue;
         }
 
+        if (pkt->pts < 0 || pkt->dts < 0 || pkt->pts == AV_NOPTS_VALUE || pkt->dts == AV_NOPTS_VALUE)
+        {
+            av_packet_unref(pkt);
+            continue;
+        }
+
         //记录每个流的首包时间戳
-        if (pts_stamp.find(pkt->stream_index) == pts_stamp.end() && pkt->pts > 0)
+        if (pts_stamp.find(pkt->stream_index) == pts_stamp.end())
         {
             pts_stamp[it->first] = pkt->pts;
         }
-        if (dts_stamp.find(pkt->stream_index) == dts_stamp.end() && pkt->dts > 0)
+        if (dts_stamp.find(pkt->stream_index) == dts_stamp.end())
         {
             dts_stamp[it->first] = pkt->dts;
         }
@@ -788,4 +794,118 @@ void encode_video()
     av_frame_free(&frame);
     avcodec_free_context(&codecCtx);
     fs.close();
+}
+
+void exercise_encode_video()
+{
+    const char* fileName = "output_exercise_encode_video.h264";
+    const char* encoderName = "libx264";
+
+    int ret = -1;
+
+    //找编码器
+    const AVCodec* codec = avcodec_find_encoder_by_name(encoderName);
+    //编解码上下文
+    AVCodecContext* codecCtx = avcodec_alloc_context3(codec);
+    //设置参数
+    codecCtx->width = 1280;
+    codecCtx->height = 680;
+    codecCtx->bit_rate = 500000;
+
+    codecCtx->gop_size = 10;//10帧一个i帧
+    codecCtx->max_b_frames = 1;//b帧
+    codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+    codecCtx->time_base = { 1,25 };
+    codecCtx->framerate = { 25, 1 };
+
+    if (codecCtx->codec_id == AV_CODEC_ID_H264)
+        ret = av_opt_set(codecCtx->priv_data, "preset", "slow", 0);
+
+    //打开编码器
+    ret = avcodec_open2(codecCtx, codec, nullptr);
+
+    //打开输出文件
+    std::fstream fs;
+    fs.open(fileName, std::ios::out | std::ios::binary);
+
+    //frame
+    AVFrame* frm = av_frame_alloc();
+
+    //设置frame参数
+    frm->width = codecCtx->width;
+    frm->height = codecCtx->height;
+    frm->format = codecCtx->pix_fmt;
+    //申请data空间
+    ret = av_frame_get_buffer(frm, 0);
+
+    //packet
+    AVPacket* pkt = av_packet_alloc();
+
+    //写帧
+    for (int i = 0; i < 30; i++)
+    {
+        //确保可写
+        ret = av_frame_make_writable(frm);
+        
+        //y
+        for (int y = 0; y < codecCtx->height; y++)
+        {
+            for (int x = 0; x < codecCtx->width; x++)
+            {
+                frm->data[0][x + y * frm->linesize[0]] = x + y + i * 3;
+            }
+        }
+        //u/v
+        for (int y = 0; y < codecCtx->height / 2; y++)
+        {
+            for (int x = 0; x < codecCtx->width / 2; x++)
+            {
+                frm->data[1][x + y * frm->linesize[1]] = 128 + y + i * 2;
+                frm->data[2][x + y * frm->linesize[2]] = 64 + x + i * 5;
+            }
+        }
+
+        frm->pts = i;
+
+        //编码
+        exercise_encode_fun(codecCtx, frm, pkt, &fs);
+    }
+    //刷新
+    exercise_encode_fun(codecCtx, nullptr, pkt, &fs);
+    //解引用
+    av_frame_unref(frm);
+
+    //清理关闭
+    fs.close();
+    av_packet_free(&pkt);
+    av_frame_free(&frm);
+    avcodec_free_context(&codecCtx);
+}
+
+void exercise_encode_fun(AVCodecContext* codecCtx, AVFrame* frm, AVPacket* pkt, std::fstream* fs)
+{
+    //发送数据帧给编码器
+    int ret = avcodec_send_frame(codecCtx, frm);
+
+    while (ret >= 0)
+    {
+        ret = avcodec_receive_packet(codecCtx, pkt);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+        {
+            //结束
+            av_packet_unref(pkt);
+            break;
+        }
+        else if (ret < 0)
+        {
+            //错误
+            exit(-1);
+        }
+
+        //写文件
+        fs->write(reinterpret_cast<const char*>(pkt->data), pkt->size);
+
+        av_packet_unref(pkt);
+    }
 }

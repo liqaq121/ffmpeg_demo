@@ -10,7 +10,8 @@ int main(int argc, char* argv[])
     w.show();
     return app.exec();
 #else
-    encode_video();
-
+    //encode_video();
+    //av_cut();
+    exercise_encode_video();
 #endif
 }
