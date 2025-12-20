@@ -909,3 +909,106 @@ void exercise_encode_fun(AVCodecContext* codecCtx, AVFrame* frm, AVPacket* pkt, 
         av_packet_unref(pkt);
     }
 }
+
+void encode_video_mux()
+{
+    const char* fileName = "output_encode_mux.mp4";
+    const char* encoderName = "libx264";
+
+    const AVCodec* codec = avcodec_find_encoder_by_name(encoderName);
+    AVCodecContext* codecCtx = avcodec_alloc_context3(codec);
+    codecCtx->width = 640;
+    codecCtx->height = 360;
+    codecCtx->bit_rate = 500000;
+
+    codecCtx->gop_size = 10;
+    codecCtx->max_b_frames = 1;
+    codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+    codecCtx->time_base = { 1,60 };
+    codecCtx->framerate = { 60,1 };
+
+    if (codecCtx->codec_id == AV_CODEC_ID_H264)
+        av_opt_set(codecCtx->priv_data, "preset", "slow", 0);
+
+    AVFrame* frame = av_frame_alloc();
+    frame->width = codecCtx->width;
+    frame->height = codecCtx->height;
+    frame->format = codecCtx->pix_fmt;
+    av_frame_get_buffer(frame, 0);
+
+    AVPacket* pkt = av_packet_alloc();
+
+    avcodec_open2(codecCtx, codec, nullptr);
+
+    AVFormatContext* ofmtCtx = nullptr;
+    avformat_alloc_output_context2(&ofmtCtx, nullptr, nullptr, fileName);
+    AVStream* oStream = avformat_new_stream(ofmtCtx, codec);
+    avcodec_parameters_from_context(oStream->codecpar, codecCtx);
+    oStream->codecpar->codec_tag = 0;
+    oStream->index = 0;
+
+    avio_open2(&ofmtCtx->pb, fileName, AVIO_FLAG_WRITE, nullptr, nullptr);
+
+    avformat_write_header(ofmtCtx, nullptr);
+
+    for (int i = 0; i < 60; i++)
+    {
+        av_frame_make_writable(frame);
+        //y
+        for (int y = 0; y < codecCtx->height; y++)
+        {
+            for (int x = 0; x < codecCtx->width; x++)
+            {
+                frame->data[0][y * frame->linesize[0] + x] = x + y + 3 * i;
+            }
+        }
+        //u/v
+        for (int y = 0; y < codecCtx->height / 2; y++)
+        {
+            for (int x = 0; x < codecCtx->width / 2; x++)
+            {
+                frame->data[1][y * frame->linesize[1] + x] = 128 + y + 2 * i;
+                frame->data[2][y * frame->linesize[2] + x] = 64 + x + 5 * i;
+            }
+        }
+
+        frame->pts = i;
+
+        encode_mux_fun(codecCtx, frame, pkt, ofmtCtx, oStream);
+    }
+    encode_mux_fun(codecCtx, nullptr, pkt, ofmtCtx, oStream);
+    av_write_trailer(ofmtCtx);
+
+    av_frame_unref(frame);
+    av_frame_free(&frame);
+    av_packet_free(&pkt);
+    avio_closep(&ofmtCtx->pb);
+    avformat_free_context(ofmtCtx);
+    avcodec_free_context(&codecCtx);
+}
+
+void encode_mux_fun(AVCodecContext* codecCtx, AVFrame* frame, AVPacket* pkt, AVFormatContext* oFmtCtx, AVStream* oStream)
+{
+    int ret = avcodec_send_frame(codecCtx, frame);
+
+    while (ret >= 0)
+    {
+        ret = avcodec_receive_packet(codecCtx, pkt);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+        {
+            av_packet_unref(pkt);
+            break;
+        }
+        else if (ret < 0)
+        {
+            std::cout << "编码错误: " << ret << std::endl;
+            exit(-1);
+        }
+
+        av_packet_rescale_ts(pkt, codecCtx->time_base, oStream->time_base);
+       
+        av_interleaved_write_frame(oFmtCtx, pkt);
+        av_packet_unref(pkt);
+    }
+}

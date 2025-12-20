@@ -26,3 +26,6 @@ void encode_video();
 //视频裸流编码练习
 void exercise_encode_video();
 void exercise_encode_fun(AVCodecContext* codecCtx, AVFrame* frm, AVPacket* pkt, std::fstream* fs);
+//视频裸流编码封装
+void encode_video_mux();
+void encode_mux_fun(AVCodecContext* codecCtx, AVFrame* frame, AVPacket* pkt, AVFormatContext* oFmtCtx, AVStream* oStream);

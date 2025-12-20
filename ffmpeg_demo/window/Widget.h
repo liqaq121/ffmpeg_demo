@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QWidget>
+#include "common.h"
+
 QT_BEGIN_NAMESPACE
 namespace Ui { class Widget; };
 QT_END_NAMESPACE
@@ -14,10 +16,18 @@ public:
     ~Widget();
 
 public slots:
-    void selectFile();
-    void saveAsFile();
-    void convert();
-
+    //1
+    void selectFile_1();
+    void saveAsFile_1();
+    void muxing();
+    //2
+    void selectFile_2();
+    void saveAsFile_2();
+    void cutMuxing();
+    //3
+    void saveAsFile_3();
+    void encodeMuxing();
+    void encode_mux_fun_3(AVCodecContext* codecCtx, AVFrame* frame, AVPacket* pkt, AVFormatContext* oFmtCtx, AVStream* oStream);
 private:
     Ui::Widget *ui;
 };
