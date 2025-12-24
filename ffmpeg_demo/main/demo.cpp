@@ -1011,4 +1011,417 @@ void encode_mux_fun(AVCodecContext* codecCtx, AVFrame* frame, AVPacket* pkt, AVF
         av_interleaved_write_frame(oFmtCtx, pkt);
         av_packet_unref(pkt);
     }
+    /*x/1
+    2/**/
+    /**/
+}
+
+void encode_audio()
+{
+    av_log_set_level(AV_LOG_DEBUG);
+
+    const char* outFile = "output_gen_encode_audio.m4a";
+    int ret = -1;
+
+    const AVCodec* codec = avcodec_find_encoder_by_name("aac_mf");
+    //const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_AAC);
+    if (!codec)
+    {
+        av_log(nullptr, AV_LOG_ERROR, "无法找到编码器 aac_mf\n");
+        return;
+    }
+    
+    AVCodecContext* codecCtx = avcodec_alloc_context3(codec);
+    codecCtx->bit_rate = 64000;
+    if (!check_sample_fmt(codec, AV_SAMPLE_FMT_S16))
+    {
+        av_log(nullptr, AV_LOG_DEBUG, "unsupported sample_fmt: AV_SAMPLE_FMT_S16");
+        avcodec_free_context(&codecCtx);
+        return;
+    } 
+    codecCtx->sample_fmt = AV_SAMPLE_FMT_S16;
+    codecCtx->sample_rate = get_best_sample_rate(codec);
+    
+    // 设置音频编码器的时间基准
+    codecCtx->time_base = {1, codecCtx->sample_rate};
+
+    AVChannelLayout ch_layout = AV_CHANNEL_LAYOUT_STEREO;
+    ret = av_channel_layout_copy(&codecCtx->ch_layout, (const AVChannelLayout*)&ch_layout);
+    if (ret < 0)
+    {
+        av_log(nullptr, AV_LOG_ERROR, "无法设置声道布局\n");
+        avcodec_free_context(&codecCtx);
+        return;
+    }
+    
+    ret = avcodec_open2(codecCtx, codec, nullptr);
+    if (ret < 0)
+    {
+        char errbuf[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+        av_log(nullptr, AV_LOG_ERROR, "无法打开编码器: %s\n", errbuf);
+        avcodec_free_context(&codecCtx);
+        return;
+    }
+    
+    // 检查frame_size，如果为0则设置默认值
+    if (codecCtx->frame_size == 0)
+    {
+        // AAC编码器通常使用1024或2048样本每帧
+        codecCtx->frame_size = 1024;
+        av_log(nullptr, AV_LOG_WARNING, "编码器frame_size为0，设置为1024\n");
+    }
+
+    AVFormatContext* fmtCtx = nullptr;
+    // 使用m4a容器格式，这样可以更好地支持AAC
+    ret = avformat_alloc_output_context2(&fmtCtx, nullptr, "ipod", outFile);
+    if (ret < 0 || !fmtCtx)
+    {
+        // 如果ipod格式失败，尝试自动检测
+        ret = avformat_alloc_output_context2(&fmtCtx, nullptr, nullptr, outFile);
+        if (ret < 0 || !fmtCtx)
+        {
+            av_log(nullptr, AV_LOG_ERROR, "无法创建输出上下文\n");
+            avcodec_free_context(&codecCtx);
+            return;
+        }
+    }
+    
+    AVStream* stream = avformat_new_stream(fmtCtx, nullptr);
+    if (!stream)
+    {
+        av_log(nullptr, AV_LOG_ERROR, "无法创建输出流\n");
+        avformat_free_context(fmtCtx);
+        avcodec_free_context(&codecCtx);
+        return;
+    }
+    
+    // 在编码器打开后复制参数
+    ret = avcodec_parameters_from_context(stream->codecpar, codecCtx);
+    if (ret < 0)
+    {
+        av_log(nullptr, AV_LOG_ERROR, "无法复制编码器参数\n");
+        avformat_free_context(fmtCtx);
+        avcodec_free_context(&codecCtx);
+        return;
+    }
+    
+    stream->index = 0;
+    stream->codecpar->codec_tag = 0;
+    // 设置流的时间基准
+    stream->time_base = codecCtx->time_base;
+
+    if (fmtCtx->oformat->flags & AVFMT_GLOBALHEADER) {
+        codecCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    }
+    
+    ret = avio_open2(&fmtCtx->pb, outFile, AVIO_FLAG_WRITE, nullptr, nullptr);
+    if (ret < 0)
+    {
+        av_log(nullptr, AV_LOG_ERROR, "无法打开输出文件\n");
+        avformat_free_context(fmtCtx);
+        avcodec_free_context(&codecCtx);
+        return;
+    }
+
+    AVFrame* frame = av_frame_alloc();
+    if (!frame)
+    {
+        av_log(nullptr, AV_LOG_ERROR, "无法分配帧\n");
+        avio_closep(&fmtCtx->pb);
+        avformat_free_context(fmtCtx);
+        avcodec_free_context(&codecCtx);
+        return;
+    }
+    
+    frame->nb_samples = codecCtx->frame_size;
+    frame->sample_rate = codecCtx->sample_rate;
+    frame->format = codecCtx->sample_fmt;
+    ret = av_channel_layout_copy(&frame->ch_layout, &codecCtx->ch_layout);
+    if (ret < 0)
+    {
+        av_log(nullptr, AV_LOG_ERROR, "无法复制声道布局到帧\n");
+        av_frame_free(&frame);
+        avio_closep(&fmtCtx->pb);
+        avformat_free_context(fmtCtx);
+        avcodec_free_context(&codecCtx);
+        return;
+    }
+    
+    ret = av_frame_get_buffer(frame, 0);
+    if (ret < 0)
+    {
+        av_log(nullptr, AV_LOG_ERROR, "无法分配帧缓冲区\n");
+        av_frame_free(&frame);
+        avio_closep(&fmtCtx->pb);
+        avformat_free_context(fmtCtx);
+        avcodec_free_context(&codecCtx);
+        return;
+    }
+
+    ret = avformat_write_header(fmtCtx, nullptr);
+    if (ret < 0)
+    {
+        av_log(nullptr, AV_LOG_ERROR, "无法写入文件头\n");
+        av_frame_free(&frame);
+        avio_closep(&fmtCtx->pb);
+        avformat_free_context(fmtCtx);
+        avcodec_free_context(&codecCtx);
+        return;
+    }
+
+    // 输出编码器信息用于调试
+    av_log(nullptr, AV_LOG_INFO, "编码器信息:\n");
+    av_log(nullptr, AV_LOG_INFO, "  采样率: %d Hz\n", codecCtx->sample_rate);
+    av_log(nullptr, AV_LOG_INFO, "  声道数: %d\n", codecCtx->ch_layout.nb_channels);
+    av_log(nullptr, AV_LOG_INFO, "  采样格式: %s\n", av_get_sample_fmt_name(codecCtx->sample_fmt));
+    av_log(nullptr, AV_LOG_INFO, "  帧大小: %d 样本\n", codecCtx->frame_size);
+    av_log(nullptr, AV_LOG_INFO, "  比特率: %ld bps\n", codecCtx->bit_rate);
+    av_log(nullptr, AV_LOG_INFO, "  时间基准: %d/%d\n", codecCtx->time_base.num, codecCtx->time_base.den);
+    av_log(nullptr, AV_LOG_INFO, "  流时间基准: %d/%d\n", stream->time_base.num, stream->time_base.den);
+
+    int sample_count = 0;
+    int num_channels = codecCtx->ch_layout.nb_channels;
+    int total_packets = 0;
+    
+    //生成音频
+    for (int i = 0; i < 200; i++)
+    {
+        ret = av_frame_make_writable(frame);
+        if (ret < 0)
+        {
+            av_log(nullptr, AV_LOG_ERROR, "无法使帧可写\n");
+            break;
+        }
+        
+        // 填充音频数据（交错格式）
+        int16_t* data = (int16_t*)frame->data[0];
+        for (int m = 0; m < codecCtx->frame_size; m++)
+        {
+            // 计算当前样本的时间（秒）
+            double t = (double)(sample_count + m) / codecCtx->sample_rate;
+            // 生成正弦波（440Hz）
+            int16_t sample = (int16_t)(10000 * sin(2.0 * M_PI * 440.0 * t));
+            
+            // 交错存储：左声道、右声道、左声道、右声道...
+            for (int ch = 0; ch < num_channels; ch++)
+            {
+                if (ch == 0)
+                {
+                    // 左声道：正弦波
+                    data[m * num_channels + ch] = sample;
+                }
+                else
+                {
+                    // 其他声道：余弦波或静音
+                    data[m * num_channels + ch] = (int16_t)(10000 * cos(2.0 * M_PI * 440.0 * t));
+                }
+            }
+        }
+        
+        frame->pts = sample_count;
+
+        sample_count += frame->nb_samples;
+
+        encode_audio_fun(fmtCtx, codecCtx, frame, stream);
+        
+        if ((i + 1) % 50 == 0)
+        {
+            av_log(nullptr, AV_LOG_INFO, "已处理 %d/%d 帧\n", i + 1, 200);
+        }
+    }
+    
+    av_log(nullptr, AV_LOG_INFO, "刷新编码器...\n");
+    encode_audio_fun(fmtCtx, codecCtx, nullptr, stream);
+    
+    av_log(nullptr, AV_LOG_INFO, "写入文件尾...\n");
+    av_write_trailer(fmtCtx);
+    av_log(nullptr, AV_LOG_INFO, "编码完成！\n");
+    avio_closep(&fmtCtx->pb);
+
+    av_frame_free(&frame);
+    avcodec_free_context(&codecCtx);
+    avformat_free_context(fmtCtx);
+}
+
+bool check_sample_fmt(const AVCodec* codec, AVSampleFormat fmt)
+{
+   const AVSampleFormat* p = codec->sample_fmts;
+   while (*p != AV_SAMPLE_FMT_NONE)
+   {
+       if (*p == fmt)
+           return true;
+       p++;
+   }
+   return false;
+}
+
+int get_best_sample_rate(const AVCodec* codec)
+{
+    const int* p = codec->supported_samplerates;
+    if (!p || *p == 0)
+        return 44100;
+
+    int best_rate = *p;
+    int min_diff = abs(*p - 44100);
+    p++;
+
+    while (*p != 0)
+    {
+        int diff = abs(*p - 44100);
+        if (diff < min_diff)
+        {
+            min_diff = diff;
+            best_rate = *p;
+        }
+        p++;
+    }
+
+    return best_rate;
+}
+
+void encode_audio_fun(AVFormatContext* fmtCtx, AVCodecContext* codecCtx, AVFrame* frame, AVStream* stream)
+{
+    int ret = avcodec_send_frame(codecCtx, frame);
+    if (ret < 0)
+    {
+        if (ret == AVERROR_EOF)
+        {
+            // EOF是正常的，表示刷新编码器
+            ret = 0; // 设置为0以便继续接收剩余数据包
+        }
+        else if (ret == AVERROR(EAGAIN))
+        {
+            // 需要先接收数据包
+            ret = 0;
+        }
+        else
+        {
+            char errbuf[AV_ERROR_MAX_STRING_SIZE];
+            av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+            av_log(nullptr, AV_LOG_ERROR, "发送帧到编码器失败: %s\n", errbuf);
+            return;
+        }
+    }
+
+    while (ret >= 0)
+    {
+        AVPacket* pkt = av_packet_alloc();
+        if (!pkt)
+        {
+            av_log(nullptr, AV_LOG_ERROR, "无法分配数据包\n");
+            break;
+        }
+        
+        ret = avcodec_receive_packet(codecCtx, pkt);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+        {
+            av_packet_free(&pkt);
+            break;
+        }
+        else if (ret < 0)
+        {
+            char errbuf[AV_ERROR_MAX_STRING_SIZE];
+            av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+            av_log(nullptr, AV_LOG_ERROR, "从编码器接收数据包失败: %s\n", errbuf);
+            av_packet_free(&pkt);
+            break;
+        }
+
+        // 成功接收到数据包
+        av_packet_rescale_ts(pkt, codecCtx->time_base, stream->time_base);
+        pkt->stream_index = stream->index;
+
+        ret = av_interleaved_write_frame(fmtCtx, pkt);
+        if (ret < 0)
+        {
+            char errbuf[AV_ERROR_MAX_STRING_SIZE];
+            av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+            av_log(nullptr, AV_LOG_ERROR, "写入帧失败: %s\n", errbuf);
+        }
+        else
+        {
+            // 成功写入，输出调试信息
+            av_log(nullptr, AV_LOG_DEBUG, "成功写入数据包，大小: %d 字节\n", pkt->size);
+        }
+
+        av_packet_free(&pkt);
+    }
+}
+
+void decode_video_to_pic()
+{
+    const char* inFile = "res/test.mp4";
+    const char* outFile = "output_pic";
+    int ret = -1;
+    int vs_index = -1;
+    AVStream* vStream = nullptr;
+    AVPacket* pkt = av_packet_alloc();
+
+    //打开容器
+    AVFormatContext* fmtCtx = nullptr;
+    ret = avformat_open_input(&fmtCtx, inFile, nullptr, nullptr);
+
+    //查找视频流
+    vs_index = av_find_best_stream(fmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    vStream = fmtCtx->streams[vs_index];
+
+    //查找解码器
+    const AVCodec* codec = avcodec_find_decoder(vStream->codecpar->codec_id);
+
+    //解码器上下文
+    AVCodecContext* codecCtx = avcodec_alloc_context3(codec);
+    ret = avcodec_parameters_to_context(codecCtx, vStream->codecpar);
+    ret = avcodec_open2(codecCtx, codec, nullptr);
+
+    //读取
+    while (av_read_frame(fmtCtx, pkt) >= 0)
+    {
+        if (pkt->stream_index != vs_index)
+        {
+            av_packet_unref(pkt);
+            continue;
+        }
+
+        decode_fun(codecCtx, pkt, outFile);
+    }
+    decode_fun(codecCtx, pkt, outFile);
+
+    av_packet_free(&pkt);
+    avformat_close_input(&fmtCtx);
+}
+
+void decode_fun(AVCodecContext* codecCtx, AVPacket* pkt, const char* name)
+{
+    AVFrame* frame = av_frame_alloc();
+
+    int ret = avcodec_send_packet(codecCtx, pkt);
+    while (ret >= 0)
+    {
+        ret = avcodec_receive_frame(codecCtx, frame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+        {
+            av_packet_unref(pkt);
+            break;
+        }
+        else if (ret < 0)
+        {
+            exit(-1);
+        }
+
+        std::string fileName = std::string(name) + "-" + std::to_string(codecCtx->frame_num);
+        std::fstream fs;
+        fs.open(fileName, std::ios::out | std::ios::binary);
+        fs << "P5" << "\n" << frame->width << " " << frame->height << "\n255\n";
+
+        for (int i = 0; i < frame->height; i++)
+        {
+            fs.write((const char*)(frame->data[0] + i * frame->linesize[0]), frame->width);
+        }
+
+        if (pkt)
+            av_packet_unref(pkt);
+    }
+
+    av_frame_free(&frame);
 }
