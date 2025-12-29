@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QWidget>
-#include "common.h"
+#include "pch.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class Widget; };
@@ -28,6 +28,10 @@ public slots:
     void saveAsFile_3();
     void encodeMuxing();
     void encode_mux_fun_3(AVCodecContext* codecCtx, AVFrame* frame, AVPacket* pkt, AVFormatContext* oFmtCtx, AVStream* oStream);
+    //4
+    void selectFile_3();
+    void selectDir();
+    void toQImage();
 private:
     Ui::Widget *ui;
 };

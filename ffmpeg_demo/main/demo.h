@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "common.h"
+#include "pch.h"
 
 void read_stream_info();
 void read_packet();
@@ -42,3 +42,6 @@ void encode_audio_fun(AVFormatContext* fmtCtx, AVCodecContext* codecCtx, AVFrame
 //视频解码生成图片
 void decode_video_to_pic();
 void decode_fun(AVCodecContext* codecCtx, AVPacket* pkt, const char* name);
+
+//解码视频转为BITMAP
+void decode_to_bmp();

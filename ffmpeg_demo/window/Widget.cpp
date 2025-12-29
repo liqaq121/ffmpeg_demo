@@ -1,12 +1,12 @@
 #include "Widget.h"
 #include "ui_Widget.h"
 
-#include "common.h"
-
 #include <QPushButton>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QTextEdit>
+#include <QImage>
+#include <QDebug>
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
@@ -27,6 +27,11 @@ Widget::Widget(QWidget *parent)
     //3
     connect(ui->btnDestFile_3, &QPushButton::clicked, this, &Widget::saveAsFile_3);
     connect(ui->btnGenEncodeMuxing, &QPushButton::clicked, this, &Widget::encodeMuxing);
+
+    //4
+    connect(ui->btnSrcFile_3, &QPushButton::clicked, this, &Widget::selectFile_3);
+    connect(ui->btnDestDir, &QPushButton::clicked, this, &Widget::selectDir);
+    connect(ui->btnToQImage, &QPushButton::clicked, this, &Widget::toQImage);
 }
 
 Widget::~Widget()
@@ -356,4 +361,110 @@ void Widget::encode_mux_fun_3(AVCodecContext* codecCtx, AVFrame* frame, AVPacket
         av_interleaved_write_frame(oFmtCtx, pkt);
         av_packet_unref(pkt);
     }
+}
+
+void Widget::selectFile_3()
+{
+    QString path = QFileDialog::getOpenFileName(this);
+    if (!path.isEmpty())
+    {
+        ui->leSrcFile_3->setText(path);
+    }
+}
+
+void Widget::selectDir()
+{
+    QString path = QFileDialog::getExistingDirectory(this);
+    if (!path.isEmpty())
+    {
+        ui->leDestDir->setText(path);
+    }
+}
+
+void Widget::toQImage()
+{
+    std::string a = ui->leSrcFile_3->text().toStdString();
+    const char* inFile = a.c_str();
+
+    int ret = -1;
+    AVFormatContext* fmtCtx = nullptr;
+    AVStream* vStream = nullptr;
+    int vsIndex = -1;
+    const AVCodec* codec = nullptr;
+    AVCodecContext* codecCtx = nullptr;
+    int outW = 360;
+    int outH = 640;
+
+    ret = avformat_open_input(&fmtCtx, inFile, nullptr, nullptr);
+    vsIndex = av_find_best_stream(fmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    vStream = fmtCtx->streams[vsIndex];
+    codec = avcodec_find_decoder(vStream->codecpar->codec_id);
+    codecCtx = avcodec_alloc_context3(nullptr);
+    ret = avcodec_parameters_to_context(codecCtx, vStream->codecpar);
+    codecCtx->codec_tag = 0;
+    ret = avcodec_open2(codecCtx, codec, nullptr);
+
+    AVPacket* pkt = av_packet_alloc();
+    AVFrame* frame = av_frame_alloc();
+    frame->width = codecCtx->width;
+    frame->height = codecCtx->height;
+    frame->format = codecCtx->pix_fmt;
+    ret = av_frame_get_buffer(frame, 0);
+
+    int frameCount = 1;
+    while (av_read_frame(fmtCtx, pkt) >= 0)
+    {
+        if (pkt->stream_index != vsIndex)
+        {
+            av_packet_unref(pkt);
+            continue;
+        }
+
+        ret = avcodec_send_packet(codecCtx, pkt);
+        while (ret >= 0)
+        {
+            ret = av_frame_make_writable(frame);
+            ret = avcodec_receive_frame(codecCtx, frame);
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+            {
+                av_packet_unref(pkt);
+                break;
+            }
+            else if (ret < 0)
+            {
+                av_packet_unref(pkt);
+                break;
+            }
+
+            AVFrame* bmpFrame = av_frame_alloc();
+            bmpFrame->width = outW;
+            bmpFrame->height = outH;
+            bmpFrame->format = AV_PIX_FMT_BGR24;
+            ret = av_frame_get_buffer(bmpFrame, 0);
+
+            //int padding = (4 - (bmpFrame->linesize[0] % 4)) % 4;
+            //int realLineSize = bmpFrame->linesize[0] + padding;
+
+            SwsContext* swsCtx = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format, outW, outH, AV_PIX_FMT_BGR24, SWS_BICUBIC, nullptr, nullptr, nullptr);
+            ret = sws_scale_frame(swsCtx, bmpFrame, frame);
+            sws_freeContext(swsCtx);
+
+            if (bmpFrame->width * 3 != bmpFrame->linesize[0])
+            {
+                for (int i = 1; i < bmpFrame->height; i++)
+                {
+                    std::memmove(bmpFrame->data[0] + i * 3 * bmpFrame->width, bmpFrame->data[0] + i * bmpFrame->linesize[0], bmpFrame->width * 3);
+                }
+            }
+           
+            QImage img = QImage(bmpFrame->data[0], bmpFrame->width, bmpFrame->height, QImage::Format::Format_BGR888);
+            img.save(ui->leDestDir->text()+"/save_"+QString::number(frameCount++)+".jpg");
+
+            av_frame_free(&bmpFrame);
+        }
+        av_packet_unref(pkt);
+    }
+    av_packet_free(&pkt);
+    avcodec_free_context(&codecCtx);
+    avformat_close_input(&fmtCtx);
 }

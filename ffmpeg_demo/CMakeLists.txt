@@ -9,8 +9,10 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOMOC ON)
 
 file(GLOB_RECURSE SRC 
-${CMAKE_CURRENT_SOURCE_DIR}/*.h
-${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
+${CMAKE_CURRENT_SOURCE_DIR}/main/*
+${CMAKE_CURRENT_SOURCE_DIR}/window/*
+main.cpp
+pch.cpp
 )
 
 add_executable (${PROJECT_NAME}
@@ -41,3 +43,4 @@ foreach(dir ${dirs})
 endforeach()
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${Include_Dirs})
+target_precompile_headers(${PROJECT_NAME} PRIVATE pch.h)

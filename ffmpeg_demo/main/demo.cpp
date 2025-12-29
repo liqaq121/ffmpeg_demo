@@ -1425,3 +1425,108 @@ void decode_fun(AVCodecContext* codecCtx, AVPacket* pkt, const char* name)
 
     av_frame_free(&frame);
 }
+
+void decode_to_bmp()
+{
+    const char* inFile = "res/test.mp4";
+
+    int ret = -1;
+    AVFormatContext* fmtCtx = nullptr;
+    AVStream* vStream = nullptr;
+    int vsIndex = -1;
+    const AVCodec* codec = nullptr;
+    AVCodecContext* codecCtx = nullptr;
+    int outW = 360;
+    int outH = 640;
+
+    ret = avformat_open_input(&fmtCtx, inFile, nullptr, nullptr);
+    vsIndex = av_find_best_stream(fmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    vStream = fmtCtx->streams[vsIndex];
+    codec = avcodec_find_decoder(vStream->codecpar->codec_id);
+    codecCtx = avcodec_alloc_context3(nullptr);
+    ret = avcodec_parameters_to_context(codecCtx, vStream->codecpar);
+    codecCtx->codec_tag = 0;
+    ret = avcodec_open2(codecCtx, codec, nullptr);
+
+    AVPacket* pkt = av_packet_alloc();
+    AVFrame* frame = av_frame_alloc();
+    frame->width = codecCtx->width;
+    frame->height = codecCtx->height;
+    frame->format = codecCtx->pix_fmt;
+    ret = av_frame_get_buffer(frame, 0);
+
+    SwsContext* swsCtx = sws_getCachedContext(nullptr, codecCtx->width, codecCtx->height, AV_PIX_FMT_YUV420P, outW, outH, AV_PIX_FMT_BGR24, SWS_BICUBIC, nullptr, nullptr, nullptr);
+
+    int frameCount = 1;
+    while (av_read_frame(fmtCtx, pkt) >= 0)
+    {
+        if (pkt->stream_index != vsIndex)
+        {
+            av_packet_unref(pkt);
+            continue;
+        }
+
+        ret = avcodec_send_packet(codecCtx, pkt);
+        while (ret >= 0)
+        {
+            ret = av_frame_make_writable(frame);
+            ret = avcodec_receive_frame(codecCtx, frame);
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+            {
+                av_packet_unref(pkt);
+                break;
+            }
+            else if (ret < 0)
+            {
+                av_packet_unref(pkt);
+                break;
+            }
+
+            AVFrame* bmpFrame = av_frame_alloc();
+            bmpFrame->width = outW;
+            bmpFrame->height = outH;
+            bmpFrame->format = AV_PIX_FMT_BGR24;
+            ret = av_frame_get_buffer(bmpFrame, 0);
+
+            int padding = (4 - (bmpFrame->linesize[0] % 4)) % 4;
+            int realLineSize = bmpFrame->linesize[0] + padding;
+
+            ret = sws_scale_frame(swsCtx, bmpFrame, frame);
+            //std::cout << bmpFrame->linesize[0] << " " << padding << " " << realLineSize << std::endl;
+
+           // BITMAPINFOHEADER infoHeader = { 0 };
+           // infoHeader.biWidth = bmpFrame->width;
+           // infoHeader.biHeight = -bmpFrame->height;
+           // infoHeader.biSize = sizeof(BITMAPINFOHEADER);
+           // infoHeader.biBitCount = 24;
+           // infoHeader.biPlanes = 1;
+           // infoHeader.biSizeImage = realLineSize * bmpFrame->height;
+           //
+           // BITMAPFILEHEADER fileHeader = { 0 };
+           // fileHeader.bfType = 0x4d42;
+           // fileHeader.bfSize = sizeof(BITMAPINFOHEADER) + sizeof(BITMAPFILEHEADER) + realLineSize * bmpFrame->height;
+           // fileHeader.bfOffBits = sizeof(BITMAPINFOHEADER) + sizeof(BITMAPFILEHEADER);
+           //
+           // //先写文件头，再写信息头
+           // std::fstream fs;
+           // fs.open(std::string(std::string("output/bmp-") + std::to_string(frameCount++) + ".bmp"), std::ios::out | std::ios::binary);
+           // fs.write((const char*)&fileHeader, sizeof(BITMAPFILEHEADER));
+           // fs.write((const char*)&infoHeader, sizeof(BITMAPINFOHEADER));
+           // for (int i = 0; i < bmpFrame->height; i++)
+           // {
+           //     fs.write((const char*)(bmpFrame->data[0] + i * bmpFrame->linesize[0]), bmpFrame->linesize[0]);
+           //     for (int j = 0; j < padding; j++)
+           //         fs.write((const char*)"\0", 1);
+           // }
+           //
+           // fs.close();
+
+            av_frame_free(&bmpFrame);
+        }
+        av_packet_unref(pkt);
+    }
+    av_packet_free(&pkt);
+    avcodec_free_context(&codecCtx);
+    avformat_close_input(&fmtCtx);
+}
+

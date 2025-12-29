@@ -9,12 +9,10 @@ int main(int argc, char* argv[])
     //exercise_encode_video();
     //encode_video_mux();
     //encode_audio();
-    decode_video_to_pic();
+    //decode_video_to_pic();
+    //decode_to_bmp();
 
-
-    return 0;
-
-    QApplication app(argc, argv);
+    QApplication app(argc, argv);            
     Widget w;
     w.show();
     return app.exec();
