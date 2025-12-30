@@ -10,7 +10,9 @@ int main(int argc, char* argv[])
     //encode_video_mux();
     //encode_audio();
     //decode_video_to_pic();
-    //decode_to_bmp();
+    decode_to_bmp();
+
+    return 0;
 
     QApplication app(argc, argv);            
     Widget w;

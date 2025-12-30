@@ -1488,38 +1488,40 @@ void decode_to_bmp()
             bmpFrame->format = AV_PIX_FMT_BGR24;
             ret = av_frame_get_buffer(bmpFrame, 0);
 
-            int padding = (4 - (bmpFrame->linesize[0] % 4)) % 4;
-            int realLineSize = bmpFrame->linesize[0] + padding;
+            int realLineSize = (bmpFrame->width * 3 + 3) / 4 * 4;//4字节对齐，应写入的行字节数
+            int padding = realLineSize - bmpFrame->width * 3;
+            char paddingBytes[3] = { 0 };
 
+            SwsContext* swsCtx = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format, outW, outH, AV_PIX_FMT_BGR24, SWS_BICUBIC, nullptr, nullptr, nullptr);
             ret = sws_scale_frame(swsCtx, bmpFrame, frame);
-            //std::cout << bmpFrame->linesize[0] << " " << padding << " " << realLineSize << std::endl;
+            sws_freeContext(swsCtx);
 
-           // BITMAPINFOHEADER infoHeader = { 0 };
-           // infoHeader.biWidth = bmpFrame->width;
-           // infoHeader.biHeight = -bmpFrame->height;
-           // infoHeader.biSize = sizeof(BITMAPINFOHEADER);
-           // infoHeader.biBitCount = 24;
-           // infoHeader.biPlanes = 1;
-           // infoHeader.biSizeImage = realLineSize * bmpFrame->height;
-           //
-           // BITMAPFILEHEADER fileHeader = { 0 };
-           // fileHeader.bfType = 0x4d42;
-           // fileHeader.bfSize = sizeof(BITMAPINFOHEADER) + sizeof(BITMAPFILEHEADER) + realLineSize * bmpFrame->height;
-           // fileHeader.bfOffBits = sizeof(BITMAPINFOHEADER) + sizeof(BITMAPFILEHEADER);
-           //
-           // //先写文件头，再写信息头
-           // std::fstream fs;
-           // fs.open(std::string(std::string("output/bmp-") + std::to_string(frameCount++) + ".bmp"), std::ios::out | std::ios::binary);
-           // fs.write((const char*)&fileHeader, sizeof(BITMAPFILEHEADER));
-           // fs.write((const char*)&infoHeader, sizeof(BITMAPINFOHEADER));
-           // for (int i = 0; i < bmpFrame->height; i++)
-           // {
-           //     fs.write((const char*)(bmpFrame->data[0] + i * bmpFrame->linesize[0]), bmpFrame->linesize[0]);
-           //     for (int j = 0; j < padding; j++)
-           //         fs.write((const char*)"\0", 1);
-           // }
-           //
-           // fs.close();
+            BITMAPFILEHEADER fileHeader = { 0 };
+            BITMAPINFOHEADER infoHeader = { 0 };
+            infoHeader.biWidth = bmpFrame->width;
+            infoHeader.biHeight = -bmpFrame->height;
+            infoHeader.biSizeImage = realLineSize * bmpFrame->height;
+            infoHeader.biSize = sizeof(BITMAPINFOHEADER);
+            infoHeader.biBitCount = 24;
+            infoHeader.biPlanes = 1;
+
+            fileHeader.bfSize = infoHeader.biSizeImage + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+            fileHeader.bfType = 0x4d42;
+            fileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+          
+
+            char str[64] = { 0 };
+            sprintf(str, "output/bmp_%d.bmp", frameCount++);
+            std::fstream fs;
+            fs.open(str, std::ios::out | std::ios::binary);
+            fs.write((const char*)&fileHeader, sizeof(BITMAPFILEHEADER));
+            fs.write((const char*)&infoHeader, sizeof(BITMAPINFOHEADER));
+            for (int i = 0; i < bmpFrame->height; i++)
+            {
+                fs.write((const char*)(bmpFrame->data[0] + i * bmpFrame->linesize[0]), bmpFrame->width * 3);
+                fs.write(paddingBytes, padding);
+            }
+            fs.close();
 
             av_frame_free(&bmpFrame);
         }
